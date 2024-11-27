@@ -1,0 +1,319 @@
+import pandas as pd
+import numpy as np
+import yfinance as yf
+import matplotlib.pyplot as plt
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import StandardScaler
+import matplotlib.dates as mdates
+
+# ------------------------------
+# Data Structures: Hash Map w/ Separate Chaining
+# ------------------------------
+class HashNode:
+    """Node for separate chaining in the hash map."""
+    def __init__(self, key, value):
+        self.key = key
+        self.value = value
+        self.next = None
+
+
+class HashMap:
+    """Custom hash map implementation with separate chaining."""
+    def __init__(self, capacity=100):
+        self.capacity = capacity
+        self.size = 0
+        self.buckets = [None] * self.capacity
+
+    def _hash(self, key):
+        """Hash function."""
+        return hash(key) % self.capacity
+
+    def put(self, key, value):
+        """Insert or update a key-value pair."""
+        index = self._hash(key)
+        head = self.buckets[index]
+
+        # Update if key exists
+        while head:
+            if head.key == key:
+                head.value = value
+                return
+            head = head.next
+
+        # Insert a new node
+        new_node = HashNode(key, value)
+        new_node.next = self.buckets[index]
+        self.buckets[index] = new_node
+        self.size += 1
+
+    def get(self, key):
+        """Retrieve a value by key."""
+        index = self._hash(key)
+        head = self.buckets[index]
+        while head:
+            if head.key == key:
+                return head.value
+            head = head.next
+        return None  # Key not found
+
+    def display(self):
+        """Display the hash map."""
+        for i, node in enumerate(self.buckets):
+            print(f"Bucket {i}:", end=" ")
+            while node:
+                print(f"({node.key}: {node.value})", end=" -> ")
+                node = node.next
+            print()
+
+
+# ------------------------------
+# Data Structures: Adjacency List-Based Directed Graph
+# ------------------------------
+class Graph:
+    """Custom adjacency list implementation."""
+    def __init__(self, num_nodes):
+        self.num_nodes = num_nodes
+        self.adj_list = [[] for _ in range(num_nodes)]
+
+    def add_edge(self, from_node, to_node):
+        """Add a directed edge."""
+        self.adj_list[from_node].append(to_node)
+
+    def display(self):
+        """Display the graph."""
+        for i, neighbors in enumerate(self.adj_list):
+            print(f"Node {i}: {neighbors}")
+
+
+# ------------------------------
+# Fetch and Preprocess Data
+# ------------------------------
+def fetch_data(stock_symbol, start_date, end_date):
+    stock = yf.Ticker(stock_symbol)
+    data = stock.history(start=start_date, end=end_date)
+    return data
+
+
+def preprocess_data_with_features(data):
+    # Fill missing values
+    data.fillna(method='ffill', inplace=True)
+    data.dropna(inplace=True)
+
+    # Feature Engineering
+    data['Daily Change'] = data['Close'].pct_change()  # Daily percentage change
+    data['7-Day MA'] = data['Close'].rolling(window=7).mean()  # 7-day moving average
+    data['Volatility'] = data['Close'].rolling(window=7).std()  # 7-day rolling standard deviation
+    data['Momentum'] = data['Close'] - data['Close'].shift(5)  # Momentum (price difference over 5 days)
+    data['RSI'] = 100 - (100 / (1 + data['Close'].diff().clip(lower=0).rolling(14).mean() /
+                                -data['Close'].diff().clip(upper=0).rolling(14).mean()))
+
+    # Remove rows with NaN values
+    data.dropna(inplace=True)
+
+    # Normalize features
+    scaler = StandardScaler()
+    feature_columns = ['7-Day MA', 'Volatility', 'Momentum', 'RSI']
+    data[feature_columns] = scaler.fit_transform(data[feature_columns])
+
+    return data
+
+
+# ------------------------------
+# Build Graph and Hash Map
+# ------------------------------
+def build_graph_and_hashmap(data):
+    num_nodes = len(data)
+    price_graph = Graph(num_nodes)
+    price_hashmap = HashMap()
+
+    for i in range(num_nodes):
+        price = data.iloc[i]['Close']
+        change = data.iloc[i]['Daily Change'] if i > 0 else 0
+
+        # Add node and edges to the graph
+        if i > 0:
+            price_graph.add_edge(i - 1, i)
+
+        # Add to hash map
+        features = {
+            "7-Day MA": data.iloc[i]['7-Day MA'],
+            "Volatility": data.iloc[i]['Volatility'],
+            "Momentum": data.iloc[i]['Momentum'],
+            "RSI": data.iloc[i]['RSI'],
+        }
+        price_hashmap.put(i, {"price": price, "features": features})
+
+    return price_graph, price_hashmap
+
+
+# ------------------------------
+# Train Prediction Models
+# ------------------------------
+def train_prediction_models(data):
+    # Features: 7-Day Moving Average, Volatility, Momentum, RSI
+    # Target: Whether price increased (1) or decreased (0)
+    data['Target'] = (data['Daily Change'] > 0).astype(int)
+
+    X = data[['7-Day MA', 'Volatility', 'Momentum', 'RSI']]
+    y = data['Target']
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+    # Decision Tree Classifier
+    tree_model = DecisionTreeClassifier()
+    tree_model.fit(X_train, y_train)
+    tree_pred = tree_model.predict(X_test)
+
+    # Logistic Regression
+    logistic_model = LogisticRegression()
+    logistic_model.fit(X_train, y_train)
+    logistic_pred = logistic_model.predict(X_test)
+
+    # Evaluate Models
+    tree_acc = accuracy_score(y_test, tree_pred)
+    logistic_acc = accuracy_score(y_test, logistic_pred)
+
+    print(f"Decision Tree Accuracy: {tree_acc:.2f}")
+    print(f"Logistic Regression Accuracy: {logistic_acc:.2f}")
+
+    return tree_model, logistic_model
+
+
+# ------------------------------
+# Visualization
+# ------------------------------
+def visualize_predictions(data, future_dates, tree_predictions, logistic_predictions):
+    plt.figure(figsize=(14, 8))
+
+    # Plot actual prices
+    plt.plot(data.index, data['Close'], label='Actual Prices', color='blue', linewidth=2)
+
+    # Future predictions
+    future_prices_tree = tree_predictions * (data['Close'].max() - data['Close'].min()) + data['Close'].min()
+    future_prices_logistic = logistic_predictions * (data['Close'].max() - data['Close'].min()) + data['Close'].min()
+
+    plt.plot(future_dates, future_prices_tree, linestyle='--', marker='o', label='Tree Future Prediction', color='red')
+    plt.plot(future_dates, future_prices_logistic, linestyle=':', marker='o', label='Logistic Future Prediction', color='purple')
+
+    plt.title('Stock Price Predictions with Future Trends', fontsize=16)
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Price', fontsize=12)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+    
+def predict_next_6_months(data, tree_model, logistic_model, days=180):
+    future_dates = []
+    future_prices_tree = []
+    future_prices_logistic = []
+
+    # Start from the last known price
+    last_close = data.iloc[-1]['Close']
+
+    # Analyze historical trends
+    avg_daily_change = data['Daily Change'].mean()
+    std_daily_change = data['Daily Change'].std()
+    volatility = data['Volatility'].mean()
+
+    # Set a minimum growth rate for flat stocks
+    min_growth_rate = 0.0002  # 0.02% daily growth for flat stocks
+
+    # Determine stock trend type
+    if avg_daily_change > 0.005:  # Exponential growth
+        trend_type = "exponential"
+    elif abs(avg_daily_change) < 0.00000000001:  # Flat trend
+        trend_type = "flat"
+    else:  # Linear growth
+        trend_type = "linear"
+
+    # Calculate final target prices
+    if trend_type == "exponential":
+        final_target_tree = last_close * (1 + avg_daily_change) ** days
+        final_target_logistic = last_close * (1 + avg_daily_change) ** days
+    elif trend_type == "linear":
+        final_target_tree = last_close * (1 + avg_daily_change * days)
+        final_target_logistic = last_close * (1 + avg_daily_change * days)
+    else:  # Flat trend
+        # Introduce a small forced linear growth based on volatility
+        final_target_tree = last_close * (1 + max(avg_daily_change, min_growth_rate) * days)
+        final_target_logistic = last_close * (1 + max(avg_daily_change, min_growth_rate) * days)
+
+    # Oscillation boundaries
+    fluctuation_range = max(volatility * last_close, 0.01 * last_close)  # At least 1% fluctuation
+
+    for i in range(1, days + 1):
+        # Generate the next date
+        future_date = data.index[-1] + pd.Timedelta(days=i)
+        future_dates.append(future_date)
+
+        # Gradual interpolation toward the target price
+        interpolated_tree_price = last_close + (final_target_tree - last_close) * (i / days)
+        interpolated_logistic_price = last_close + (final_target_logistic - last_close) * (i / days)
+
+        # Add oscillations (sine wave for bumps)
+        tree_price = interpolated_tree_price 
+        logistic_price = interpolated_logistic_price 
+
+        # Append future prices
+        future_prices_tree.append(max(tree_price, 0))  # Ensure price is non-negative
+        future_prices_logistic.append(max(logistic_price, 0))
+
+    return future_dates, future_prices_tree, future_prices_logistic
+
+
+
+def visualize_predictions_with_continuous_future(data, future_dates, future_prices_tree, future_prices_logistic):
+    plt.figure(figsize=(14, 8))
+
+    # Plot historical prices
+    plt.plot(data.index, data['Close'], label='Actual Prices', color='blue', linewidth=2)
+
+    # Plot future predictions
+    plt.plot(future_dates, future_prices_tree, label='Tree Model Predictions', color='red', linestyle='--', linewidth=2)
+    plt.plot(future_dates, future_prices_logistic, label='Logistic Model Predictions', color='purple', linestyle=':', linewidth=2)
+
+    # Formatting the x-axis
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+    plt.xticks(rotation=45)
+
+    plt.title('Stock Price Predictions for the Next 6 Months', fontsize=16)
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Price', fontsize=12)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+# ------------------------------
+# Main Program
+# ------------------------------
+if __name__ == "__main__":
+    # Step 1: Fetch and preprocess data
+    stock_data = fetch_data("CVNA", "2020-01-01", "2023-01-01")
+    processed_data = preprocess_data_with_features(stock_data)
+
+    # Step 2: Build custom graph and hash map
+    price_graph, price_hashmap = build_graph_and_hashmap(processed_data)
+
+    # Display data structures for debugging
+    print("Graph:")
+    price_graph.display()
+    print("\nHash Map:")
+    price_hashmap.display()
+
+    # Step 3: Train prediction models
+    tree_model, logistic_model = train_prediction_models(processed_data)
+
+    # Step 4: Predict the next 6 months
+    future_dates, future_prices_tree, future_prices_logistic = predict_next_6_months(
+        processed_data, tree_model, logistic_model, days=180
+    )
+
+    # Step 5: Visualize predictions with future trends
+    visualize_predictions_with_continuous_future(processed_data, future_dates, future_prices_tree, future_prices_logistic)
