@@ -89,6 +89,43 @@ class Graph:
         """Prints the adjacency list representation of the graph."""
         for i, neighbors in enumerate(self.adj_list):
             print(f"Node {i}: {neighbors}")
+
+# ------------------------------
+# Fetch and Preprocess Data
+# ------------------------------
+def fetch_data(stock_symbol, start_date, end_date):
+    """Fetches historical stock data for a given stock symbol and date range."""
+    # Initializes the Ticker object for the stock symbol.
+    stock = yf.Ticker(stock_symbol)
+    # Fetches historical data.
+    data = stock.history(start=start_date, end=end_date)
+    return data
+
+
+def preprocess_data_with_features(data):
+    """Preprocesses the stock data and adds derived features for analysis."""
+    # Fills missing values and drops remaining NaN rows.
+    data.fillna(method='ffill', inplace=True)
+    data.dropna(inplace=True)
+
+    # Adds derived features to capture price trends, short-term volatility, momentum, and market strength for enhanced analysis
+    data['Daily Change'] = data['Close'].pct_change()  # Daily percentage change
+    data['7-Day MA'] = data['Close'].rolling(window=7).mean()  # 7-day moving average
+    data['Volatility'] = data['Close'].rolling(window=7).std()  # 7-day rolling standard deviation
+    data['Momentum'] = data['Close'] - data['Close'].shift(5)  # Momentum (price difference over 5 days)
+    data['RSI'] = 100 - (100 / (1 + data['Close'].diff().clip(lower=0).rolling(14).mean() /
+                                -data['Close'].diff().clip(upper=0).rolling(14).mean()))
+
+    # Removes rows with NaN values to ensure clean data.
+    data.dropna(inplace=True)
+
+    # Normalizes selected feature columns by using StandardScaler for consistent scaling.
+    scaler = StandardScaler()
+    feature_columns = ['7-Day MA', 'Volatility', 'Momentum', 'RSI']
+    data[feature_columns] = scaler.fit_transform(data[feature_columns])
+
+    return data
+
 # ------------------------------
 # Build Graph and Hash Map
 # ------------------------------
