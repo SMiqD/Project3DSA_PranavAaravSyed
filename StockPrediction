@@ -13,7 +13,7 @@ import matplotlib.dates as mdates
 # Data Structures: Hash Map w/ Separate Chaining
 # ------------------------------
 class HashNode:
-    """Node for separate chaining in the hash map."""
+    """Represents a node in the hash map for separate chaining, each storing a key-value pair and a pointer to the next node."""
     def __init__(self, key, value):
         self.key = key
         self.value = value
@@ -21,46 +21,49 @@ class HashNode:
 
 
 class HashMap:
-    """Custom hash map implementation with separate chaining."""
+    """Custom hash map implementation that uses separate chaining to handle collisions."""
     def __init__(self, capacity=100):
+        # Number of buckets in the hash map
         self.capacity = capacity
+        # Current number of key-value pairs in the map
         self.size = 0
+        # Array of buckets initialized with None
         self.buckets = [None] * self.capacity
 
     def _hash(self, key):
-        """Hash function."""
+        """Hash function that calculates the bucket index for a given key."""
         return hash(key) % self.capacity
 
     def put(self, key, value):
-        """Insert or update a key-value pair."""
+        """Inserts a new key-value pair or updates the value if the key already exists"""
         index = self._hash(key)
         head = self.buckets[index]
 
-        # Update if key exists
+        # Checks if key already exists, and updates its value if it does
         while head:
             if head.key == key:
                 head.value = value
                 return
             head = head.next
 
-        # Insert a new node
+        # Creates a new node and adds it to the bucket if the key doesn't exist
         new_node = HashNode(key, value)
         new_node.next = self.buckets[index]
         self.buckets[index] = new_node
         self.size += 1
 
     def get(self, key):
-        """Retrieve a value by key."""
+        """Retrieves the value associated with a key"""
         index = self._hash(key)
         head = self.buckets[index]
         while head:
             if head.key == key:
                 return head.value
             head = head.next
-        return None  # Key not found
+        return None  # Returns none if the key does not exist in the hash map
 
     def display(self):
-        """Display the hash map."""
+        """Prints the contents of the hash map for visualization."""
         for i, node in enumerate(self.buckets):
             print(f"Bucket {i}:", end=" ")
             while node:
@@ -71,23 +74,26 @@ class HashMap:
 # Data Structures: Adjacency List-Based Directed Graph
 # ------------------------------
 class Graph:
-    """Custom adjacency list implementation."""
+    """Custom implementation of a directed graph using an adjacency list, where each node points to a list of connected nodes."""
     def __init__(self, num_nodes):
+        # Number of nodes in the graph
         self.num_nodes = num_nodes
+        # Adjacency list representation
         self.adj_list = [[] for _ in range(num_nodes)]
 
     def add_edge(self, from_node, to_node):
-        """Add a directed edge."""
+        """Adds a directed edge from `from_node` to `to_node."""
         self.adj_list[from_node].append(to_node)
 
     def display(self):
-        """Display the graph."""
+        """Prints the adjacency list representation of the graph."""
         for i, neighbors in enumerate(self.adj_list):
             print(f"Node {i}: {neighbors}")
 # ------------------------------
 # Build Graph and Hash Map
 # ------------------------------
 def build_graph_and_hashmap(data):
+    """Builds a directed graph and a hash map from the given data."""
     num_nodes = len(data)
     price_graph = Graph(num_nodes)
     price_hashmap = HashMap()
@@ -96,11 +102,11 @@ def build_graph_and_hashmap(data):
         price = data.iloc[i]['Close']
         change = data.iloc[i]['Daily Change'] if i > 0 else 0
 
-        # Add node and edges to the graph
+        # Adds a directed edge to the graph by connecting current node to next node
         if i > 0:
             price_graph.add_edge(i - 1, i)
 
-        # Add to hash map
+        # Extracts the features and stores them in the hash map
         features = {
             "7-Day MA": data.iloc[i]['7-Day MA'],
             "Volatility": data.iloc[i]['Volatility'],
@@ -118,7 +124,28 @@ def build_graph_and_hashmap(data):
 # ------------------------------
 if __name__ == "__main__":
 
-    # Step 1: Build custom graph and hash map
+    # Fetches historical stock data and preprocesses it to calculate relevant features
+    stock_data = fetch_data("CVNA", "2020-01-01", "2023-01-01")
+    processed_data = preprocess_data_with_features(stock_data)
+
+    # Constructs a graph to represent price relationships over time and a hash map to store daily feature data
     price_graph, price_hashmap = build_graph_and_hashmap(processed_data)
+
+    # Outputs the adjacency list of the graph as well as the hash map's contents to verify correctness and ensure data is loading
+    print("Graph:")
+    price_graph.display()
+    print("\nHash Map:")
+    price_hashmap.display()
+
+    # Trains two machine learning models for price prediction
+    tree_model, logistic_model = train_prediction_models(processed_data)
+
+    # Predicts stock prices and various other information for the next 6 months using the trained models
+    future_dates, future_prices_tree, future_prices_logistic = predict_next_6_months(
+        processed_data, tree_model, logistic_model, days=180
+    )
+
+    # Creates a visualization that overlays the actual historical stock data with predictions from both models 
+    visualize_predictions_with_continuous_future(processed_data, future_dates, future_prices_tree, future_prices_logistic)
 
     
