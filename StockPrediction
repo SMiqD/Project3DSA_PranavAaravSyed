@@ -154,7 +154,41 @@ def build_graph_and_hashmap(data):
 
     return price_graph, price_hashmap
 
+# ------------------------------
+# Train Prediction Models
+# ------------------------------
+def train_prediction_models(data):
+    """Trains prediction models using financial indicators as features and price movement as the target."""
+    # Adds the target variable: 1 if the price increased, 0 otherwise
+    data['Target'] = (data['Daily Change'] > 0).astype(int)
 
+    # Defines features as the independent variables and target as the dependent variable
+    X = data[['7-Day MA', 'Volatility', 'Momentum', 'RSI']]
+    y = data['Target']
+
+    # Splits the dataset into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+    # Initializes and trains a Decision Tree Classifier on the training data
+    tree_model = DecisionTreeClassifier()
+    tree_model.fit(X_train, y_train)
+    tree_pred = tree_model.predict(X_test)
+
+    # Initializes and trains a Logistic Regression model on the training data
+    logistic_model = LogisticRegression()
+    logistic_model.fit(X_train, y_train)
+    logistic_pred = logistic_model.predict(X_test)
+
+    # Evaluates both models using accuracy as the performance metric
+    tree_acc = accuracy_score(y_test, tree_pred)
+    logistic_acc = accuracy_score(y_test, logistic_pred)
+
+    # Prints the accuracy scores for comparison
+    print(f"Decision Tree Accuracy: {tree_acc:.2f}")
+    print(f"Logistic Regression Accuracy: {logistic_acc:.2f}")
+
+    # Returns the trained models for further use
+    return tree_model, logistic_model
 
 # ------------------------------
 # Main Program
