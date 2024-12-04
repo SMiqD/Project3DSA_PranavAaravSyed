@@ -291,8 +291,8 @@ def visualize_predictions_with_continuous_future(data, future_dates, future_pric
     plt.plot(data.index, data['Close'], label='Actual Prices', color='blue', linewidth=2)
 
     # Overlays future predictions from both models
-    plt.plot(future_dates, future_prices_tree, label='Tree Model (Hash Map) Predictions', color='red', linestyle='--', linewidth=2)
-    plt.plot(future_dates, future_prices_logistic, label='Logistic Model (Graph) Predictions', color='purple', linestyle=':', linewidth=2)
+    plt.plot(future_dates, future_prices_tree, label='Tree Model Predictions', color='red', linestyle='--', linewidth=2)
+    plt.plot(future_dates, future_prices_logistic, label='Logistic Model Predictions', color='purple', linestyle=':', linewidth=2)
 
     # Formats the x-axis to display dates cleanly
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
@@ -318,7 +318,7 @@ def visualize_predictions_with_continuous_future(data, future_dates, future_pric
 if __name__ == "__main__":
 
     # Fetches historical stock data and preprocesses it to calculate relevant features
-    stock_data = fetch_data("CVNA", "2020-01-01", "2023-01-01")
+    stock_data = fetch_data("AAPL", "2020-01-01", "2023-01-01")
     processed_data = preprocess_data_with_features(stock_data)
 
     # Constructs a graph to represent price relationships over time and a hash map to store daily feature data
