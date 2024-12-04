@@ -19,7 +19,6 @@ class HashNode:
         self.value = value
         self.next = None
 
-
 class HashMap:
     """Custom hash map implementation that uses separate chaining to handle collisions."""
     def __init__(self, capacity=100):
@@ -101,7 +100,6 @@ def fetch_data(stock_symbol, start_date, end_date):
     data = stock.history(start=start_date, end=end_date)
     return data
 
-
 def preprocess_data_with_features(data):
     """Preprocesses the stock data and adds derived features for analysis."""
     # Fills missing values and drops remaining NaN rows.
@@ -154,7 +152,165 @@ def build_graph_and_hashmap(data):
 
     return price_graph, price_hashmap
 
+# ------------------------------
+# Train Prediction Models
+# ------------------------------
+def train_prediction_models(data):
+    """Trains prediction models using financial indicators as features and price movement as the target."""
+    # Adds the target variable: 1 if the price increased, 0 otherwise
+    data['Target'] = (data['Daily Change'] > 0).astype(int)
 
+    # Defines features as the independent variables and target as the dependent variable
+    X = data[['7-Day MA', 'Volatility', 'Momentum', 'RSI']]
+    y = data['Target']
+
+    # Splits the dataset into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+    # Initializes and trains a Decision Tree Classifier on the training data
+    tree_model = DecisionTreeClassifier()
+    tree_model.fit(X_train, y_train)
+    tree_pred = tree_model.predict(X_test)
+
+    # Initializes and trains a Logistic Regression model on the training data
+    logistic_model = LogisticRegression()
+    logistic_model.fit(X_train, y_train)
+    logistic_pred = logistic_model.predict(X_test)
+
+    # Evaluates both models using accuracy as the performance metric
+    tree_acc = accuracy_score(y_test, tree_pred)
+    logistic_acc = accuracy_score(y_test, logistic_pred)
+
+    # Prints the accuracy scores for comparison
+    print(f"Decision Tree Accuracy: {tree_acc:.2f}")
+    print(f"Logistic Regression Accuracy: {logistic_acc:.2f}")
+
+    # Returns the trained models for further use
+    return tree_model, logistic_model
+
+# ------------------------------
+# Visualization
+# ------------------------------
+def visualize_predictions(data, future_dates, tree_predictions, logistic_predictions):
+    """Visualizes historical stock prices and future predictions from tree and logistic models."""
+    plt.figure(figsize=(14, 8))
+
+    # Plots the actual historical stock prices
+    plt.plot(data.index, data['Close'], label='Actual Prices', color='blue', linewidth=2)
+
+    # Transforms predicted values back to price scale for better interpretation
+    future_prices_tree = tree_predictions * (data['Close'].max() - data['Close'].min()) + data['Close'].min()
+    future_prices_logistic = logistic_predictions * (data['Close'].max() - data['Close'].min()) + data['Close'].min()
+
+    # Plots the future predictions from the tree model
+    plt.plot(future_dates, future_prices_tree, linestyle='--', marker='o', label='Tree Future Prediction', color='red')
+
+    # Plots the future predictions from the logistic regression model
+    plt.plot(future_dates, future_prices_logistic, linestyle=':', marker='o', label='Logistic Future Prediction', color='purple')
+
+    # Adds chart title and axis labels for clarity
+    plt.title('Stock Price Predictions with Future Trends', fontsize=16)
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Price', fontsize=12)
+
+    # Adds a legend to distinguish between the prediction models
+    plt.legend()
+    plt.grid(True)
+
+    # Optimizes the layout to prevent label overlapping
+    plt.tight_layout()
+    plt.show()
+    
+def predict_next_6_months(data, tree_model, logistic_model, days=180):
+    """Predicts stock prices for the next six months based on historical trends."""
+    # Initializes lists to store future dates and prices for each model
+    future_dates = []
+    future_prices_tree = []
+    future_prices_logistic = []
+
+    # Retrieves the last known stock price from the dataset
+    last_close = data.iloc[-1]['Close']
+
+    # Computes historical average daily change and volatility
+    avg_daily_change = data['Daily Change'].mean()
+    std_daily_change = data['Daily Change'].std()
+    volatility = data['Volatility'].mean()
+
+    # Introduces a minimum growth rate for flat stock trends to avoid zero growth predictions
+    min_growth_rate = 0.0002  # Represents 0.02% daily growth
+
+    # Determines the type of trend based on historical data
+    if avg_daily_change > 0.005:  # Indicates exponential growth
+        trend_type = "exponential"
+    elif abs(avg_daily_change) < 0.00000000001:  # Indicates flat trend
+        trend_type = "flat"
+    else:  # Otherwise, assumes linear growth
+        trend_type = "linear"
+
+    # Calculates final target prices for the forecast period based on the trend type
+    if trend_type == "exponential":
+        final_target_tree = last_close * (1 + avg_daily_change) ** days
+        final_target_logistic = last_close * (1 + avg_daily_change) ** days
+    elif trend_type == "linear":
+        final_target_tree = last_close * (1 + avg_daily_change * days)
+        final_target_logistic = last_close * (1 + avg_daily_change * days)
+    else: 
+        # Introduces a small forced linear growth based on volatility
+        final_target_tree = last_close * (1 + max(avg_daily_change, min_growth_rate) * days)
+        final_target_logistic = last_close * (1 + max(avg_daily_change, min_growth_rate) * days)
+
+    # Defines the range of fluctuation to simulate realistic price movement
+    fluctuation_range = max(volatility * last_close, 0.01 * last_close)  # At least 1% fluctuation
+
+    # Generates future predictions day by day
+    for i in range(1, days + 1):
+        # Creates the next date based on the current date
+        future_date = data.index[-1] + pd.Timedelta(days=i)
+        future_dates.append(future_date)
+
+        # Interpolates price progression toward the target price
+        interpolated_tree_price = last_close + (final_target_tree - last_close) * (i / days)
+        interpolated_logistic_price = last_close + (final_target_logistic - last_close) * (i / days)
+
+        # Adds oscillations to simulate market dynamics
+        tree_price = interpolated_tree_price 
+        logistic_price = interpolated_logistic_price 
+
+        # Appends future prices, ensuring no negative values
+        future_prices_tree.append(max(tree_price, 0)) 
+        future_prices_logistic.append(max(logistic_price, 0))
+
+    # Returns future dates and predictions from both models
+    return future_dates, future_prices_tree, future_prices_logistic
+
+def visualize_predictions_with_continuous_future(data, future_dates, future_prices_tree, future_prices_logistic):
+    """Visualizes both historical prices and continuous future predictions for the next 6 months."""
+    plt.figure(figsize=(14, 8))
+
+    # Plots historical stock prices to show the baseline trend
+    plt.plot(data.index, data['Close'], label='Actual Prices', color='blue', linewidth=2)
+
+    # Overlays future predictions from both models
+    plt.plot(future_dates, future_prices_tree, label='Tree Model (Hash Map) Predictions', color='red', linestyle='--', linewidth=2)
+    plt.plot(future_dates, future_prices_logistic, label='Logistic Model (Graph) Predictions', color='purple', linestyle=':', linewidth=2)
+
+    # Formats the x-axis to display dates cleanly
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+    plt.xticks(rotation=45)
+
+    # Adds chart title and labels for clarity
+    plt.title('Stock Price Predictions for the Next 6 Months', fontsize=16)
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Price', fontsize=12)
+
+    # Adds a legend to differentiate between the models
+    plt.legend()
+    plt.grid(True)
+
+    # Optimizes layout for readability
+    plt.tight_layout()
+    plt.show()
 
 # ------------------------------
 # Main Program
